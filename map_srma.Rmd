@@ -1,0 +1,402 @@
+---
+title: "Landoni MAP SRMA"
+author: "Tom Payne"
+date: '`r format(Sys.time(), "%Y-%m-%d %H:%M")`'
+output:   
+  html_document:
+    toc: true
+    toc_depth: 4
+    number_sections: true
+    toc_float: true
+    theme: united
+---
+
+```{r setup, include=FALSE}
+
+library(tidyverse)
+library(ggplot2)
+library(ggpubr)
+library(gridExtra)
+library(ggrepel)
+library(knitr)
+library(kableExtra)
+library(metafor)
+library(lme4)
+library(numDeriv)
+library(BiasedUrn)
+library(dplyr)
+library(glue)
+library(gt)
+library(dmetar)
+library(meta)
+library(gridBase)
+library(grid)
+library(bayesmeta)
+library(brms)
+library(tidybayes)
+library(patchwork)
+library(emmeans)
+
+knitr::opts_chunk$set(echo = F, message = F, warning = F, error = T, 
+                      fig.height = 3, out.width = "100%", 
+                      dev = "png", dpi = 300, cache = T)
+
+### Set filepaths 
+import_path_mac <- '/Users/thomaspayne/Documents/MPhil/Landoni/'
+export_path_mac <- '/Users/thomaspayne/Documents/MPhil/Landoni/'
+
+## Start off by pulling the data from the Landoni MA for hospital LOS
+gold_1995 <- c(author = "Gold", year = "1995", subgroup = "Cardiac", m1i = 17, sd1i = 25, n1i = 124, m2i = 13, sd2i = 14, n2i = 124)
+siepe_2011 <- c(author = "Siepe", year = "2011", subgroup = "Cardiac", m1i = 12, sd1i = 8, n1i = 48, m2i = 13, sd2i = 7, n2i = 47)
+sirvinskas_2012 <- c(author = "Sirvinskas", year = "2012", subgroup = "Cardiac", m1i = 12, sd1i = 5.8, n1i = 36, m2i = 13, sd2i = 5, n2i = 36)
+hu_2021 <- c(author = "Hu", year = "2021", subgroup = "Noncardiac", m1i = 12, sd1i = 3.9, n1i = 143, m2i = 12, sd2i = 5.1, n2i = 155)
+marcucci_2023 <- c(author = "Marcucci", year = "2023", subgroup = "Noncardiac", m1i = 4.1, sd1i = 1.4, n1i = 3748, m2i = 4.3, sd2i = 1.4, n2i = 3742)
+vedel_2018 <- c(author = "Vedel", year = "2018", subgroup = "Noncardiac", m1i = 6.3, sd1i = 2.2, n1i = 99, m2i = 6.2, sd2i = 2, n2i = 98)
+
+los_df <- as.data.frame(rbind(gold_1995, siepe_2011, sirvinskas_2012, hu_2021, marcucci_2023, vedel_2018)) %>%
+  mutate(across(m1i:n2i, as.numeric))
+
+## Now pull for data for AF
+siepe_2011 <- c(author = "Siepe", year = "2011", subgroup = "Cardiac", ai = 9, n1i = 48, ci = 16, n2i = 44)
+vedel_2018 <- c(author = "Vedel", year = "2018", subgroup = "Cardiac", ai = 49, n1i = 98, ci = 52, n2i = 97)
+marcucci_2023 <- c(author = "Marcucci", year = "2023", subgroup = "Noncardiac", ai = 44, n1i = 3748, ci = 62, n2i = 3742)
+
+af_df <- as.data.frame(rbind(siepe_2011, marcucci_2023, vedel_2018)) %>%
+  mutate(across(ai:n2i, as.numeric))
+
+# Now calculate the study-level effect sizes and variances
+dat_los <- escalc(measure="MD", m1i = m1i, sd1i = sd1i, n1i = n1i, m2i = m2i, sd2i = sd2i, n2i = n2i, data=los_df)
+
+dat_af <- escalc(measure="OR", ai = ai, n1i = n1i, ci = ci, n2i = n2i, data=af_df)
+
+## IV DL for LOS
+rma_los_DL <- rma(yi, vi, data = dat_los, method = "DL")
+rma_af_DL <- rma(yi, vi, data = dat_af, method = "PM")
+
+```
+
+# Introduction
+
+This is an HTML to accompany the correspondence by Tom Payne and Ben Moran to the British Journal of Anaesthesia.
+
+Below I describe some possible issues with the [D'Amico et al. meta-analysis](https://www.bjanaesthesia.org.uk/article/S0007-0912(23)00479-8/fulltext), published in September 2023 in the British Journal of Anaesthesia.
+
+I've split them into issues relating to conclusions based on the MAP cutoff of ≤60, the inclusion criteria, and the data extraction/calculation.
+
+# Conclusions regarding MAP ≤60
+
+The conclusion of the study by D'Amico and colleagues states:
+
+> "Pooled randomised evidence shows that a target intraoperative mean arterial pressure ≤60 mm Hg is not associated with increased mortality; nevertheless it is surprisingly associated with a reduced rate of atrial fibrillation and of length of hospital stay."
+
+Let's break this down a bit. Let's start with the first line:
+
+> "Pooled randomised evidence shows that a target intraoperative mean arterial pressure ≤60 mm Hg is not associated with increased mortality"
+
+This statement is based upon the result of their primary outcome, in that they did not observe a difference in the odds of mortality between their two groups. 
+
+The issue here is how they distinguish and label their 'low MAP' and 'high MAP' groups. The authors state throughout the manuscript that the 'low MAP' group targeted a MAP ≤60 and the 'high MAP' group targeted a MAP >60. In fact, it is part of their inclusion criteria - the methods section states:
+
+> "Trials were included if they compared targeted management, maintaining the arterial pressure above 60 mm Hg, with permissive management allowing lower blood pressures (i.e. mean target pressure ≤60 mm Hg)."
+
+But the authors go on to clarify that they indeed include many studies which target a MAP ≥60 in the 'low MAP' group. So, they decide to do a sensitivity analysis excluding the six studies which maintained MAP >60 in the 'low MAP' group:
+
+> "A sensitivity analysis was performed including only the studies which maintained intraoperative MAP ≤60 and >60 mm Hg in the two groups."
+
+While the authors do not provide the forest plot or findings for this analysis, we can take them at face value that there was indeed no difference in the primary outcome when excluding studies that targeted MAP ≥60 in the 'low MAP' group. However, from Table 1 it is clear that the only studies with MAP targets <60 were in cardiac surgery, with the exception of one study in trauma surgery. So, when the authors state in their conclusion,
+
+> "Pooled randomised evidence shows that a target intraoperative mean arterial pressure ≤60 mm Hg is not associated with increased mortality"
+
+This really only applies to cardiac surgery, because all bar one of the included studies in noncardiac surgery targeted MAP ≥60 in the 'low MAP' group. The meta-analysis of all 10 studies does not provide evidence of a difference in outcomes when targeting a lower MAP compared to a higher MAP, but the cutoff of ≤60 applied by the authors only refers to cardiac surgery.
+
+Now let's focus on the second sentence of the conclusion:
+
+> "Nevertheless it is surprisingly associated with a reduced rate of atrial fibrillation and of length of hospital stay."
+
+The issue here is that the authors extrapolate the 'MAP ≤60 or >60' dichotomy to their secondary outcomes, hospital LOS and odds of AF. The driver of the AF and hospital LOS findings is the POISE-3 trial - it constitutes 61% of the weight in the AF analysis, and 98% of the weight in the LOS analysis. Indeed, when you remove POISE-3 from these analyses, the results show no evidence of a difference in outcomes between high and low MAP targets. 
+
+The issue is that the target for the 'low MAP' group in POISE-3 was MAP ≥60. Moreover the supplementary materials to the POISE-3 study show that, in the 'low MAP' group:
+
+- The median (Q1-Q3) minutes with MAP <60 = 0 (0-2.2)
+- The median (Q1-Q3) % of time with MAP <60 = 0% (0%-2.17%)
+- The % of patients with MAP ≥60 at least 80% of the time = 96.7%
+
+In Table 1, D'Amico and colleagues state that the target pressure in POISE-3 was "MAP = 60 vs 80". I believe this misleads the reader into believing that POISE-3 targeted a MAP of 60mmHg in the 'low MAP' group and 80mmHg in the 'high MAP' group. While in reality, the 'low MAP' group targeted a MAP ≥60 and the 'high MAP' group targeted MAP ≥80. Even in the 'low MAP' group in POISE-3, 45.8% of patients had a MAP ≥80 at least 60% of the time.
+
+# Inclusion criteria
+
+Firstly, POISE-3 does not appear to meet the inclusion criteria of this SRMA. D'Amico and colleagues' methods section states:
+
+> "We included studies with patients undergoing noncardiac and cardiac surgery under general anaesthesia that compared intraoperative permissive management with intraoperative targeted management."
+
+In the results section they then state:
+
+> "All studies used general anaesthesia with induction performed with propofol, thiopental, or flunitrazepam...General anaesthesia was maintained with halogenated agents in five studies, whereas the others did not report these data."
+
+However, the POISE-3 supplementary materials show that approximately 25% of surgical cases did not involve general anaesthesia. Nowhere in the inclusion criteria do the POISE-3 investigators state that GA must be used. This is important because, as stated above, POISE-3 is the largest study in this paper and dominates every analysis (>50% of the total weight in every analysis). 
+
+Moreover, the supplementary materials of D'Amico and colleagues describes 2 studies labelled "major excluded trials" which were excluded on the grounds of not being non-GA studies.
+
+# Data extraction inconsistencies
+
+These inconsistencies relate to the analysis of hospital length of stay (LOS).
+
+Let's start by having a look at the data, which I have extracted exactly as presented from the forest plots.
+
+The columns `m1i` and `m2i` are the means for hospital LOS in both groups, `sd1i` and `sd2i` are the standard deviations, and `n1i` and `n2i` are the total number of participants in each group. 
+
+``` {r}
+print(los_df)
+```
+
+D'Amico and colleagues use RevMan software to conduct their analysis. I will use the `metafor` package in R (via RStudio) given it provides more flexibility in statistical modelling. All of the functionality in RevMan is reproducible in R using `metafor`. Let's prove this, by reproducing D'Amico's results in R software.
+
+RevMan's only available option for meta-analysis of mean differences is a frequentist inverse variance (IV) model. It is called an 'inverse variance model' because studies are weighted by the inverse of their variance:
+
+$$
+w_i = \frac{1}{v_i}
+$$
+
+Where $v_i$ is the variance and $w_i$ is the weight of the $i$th study. 
+
+The above equation represents a fixed effect model, while the random effects model includes an estimation of $\tau$, which represents the standard deviation of the population-level effects. $\tau$ is often what is being referred to when one refers to 'between-study heterogeneity'. The weighting of studies then becomes:
+
+$$
+w_i = \frac{1}{v_i + \tau^2}
+$$
+
+The only method for estimating $\tau$ that is available in RevMan is a method described by DerSimonian and Laird (DL), the details of which are available [here](https://pubmed.ncbi.nlm.nih.gov/3802833/). 
+
+So, I will use an IV model with the DL estimator for $\tau$. The results are printed below, and they are exactly the same as those reported by D'Amico and colleagues:
+
+``` {r}
+print(rma_los_DL)
+```
+
+Note the DL estimate for $\tau$ is 0, so our random effects model has essentially converged to a fixed effect model. This is a more fundamental issue with frequentist meta-analysis that will not be addressed here.
+
+Now to the issue that needs to be addressed. In the hospital LOS meta-analysis that I have reproduced above, the [POISE-3 trial](https://pubmed.ncbi.nlm.nih.gov/37094336/) carries most of the weight (98.4%, in fact). It is almost entirely responsible for the pooled result showing benefit for the 'low MAP target' group. It carries so much weight because it has by far the most participants and as such has by far the smallest variance - and studies are weighted according to their variance, as I discussed above. 
+
+There is a significant discordance between the effect size reported in the forest plot by D'Amico and colleagues and the POISE-3 trial manuscript. POISE-3 reports a median (Q1-Q3) for hospital LOS in both groups, which was 4.0 (2.1-7.0) in the 'low MAP' group and 4.0 (2.1-7.1) in the 'high MAP' group. The median difference (95%CI) between the two groups is 0.05 (-0.05 to 0.14). 
+
+However, in the forest plot reported by D'Amico and colleagues, the effect size (mean difference, 95%CI) for POISE-3 is -0.20 (-0.26 to -0.14). The estimate of the direction of effect is different to the POISE-3 results because POISE-3 are using 'high MAP' minus 'low MAP' while D'Amico et al. use 'low MAP' minus 'high MAP'. But more importantly, the mean difference reported by D'Amico et al. shows a *much* stronger effect than that reported in the POISE-3 manuscript.
+
+This likely arose through the conversion of the median (IQR) to mean (SD) in the process of meta-analysis data collection. Meta-analyses of medians have been described but in general it is much easier to perform a meta-analysis of means, and if studies report a median then the meta-analyst just converts it to a mean and then include it in the meta-analysis.
+
+In fact, there are six studies in this analysis, of which 3 (Marcucci, Vedel, and Hu) require calculation of the mean (SD) from the median (IQR).
+
+D'Amico and colleagues state that they use a method described by Wan et al. to convert medians to means. At this point the authors cite an unrelated paper ([this one](https://doi.org/10.1136/bmj.316.7136.989)), but I will assume that they meant to cite the correct paper, which is [here](https://bmcmedresmethodol.biomedcentral.com/articles/10.1186/1471-2288-14-135#Sec17), which they do indeed cite in the next sentence. Wan et al.'s method is appropriate to use and is an improvement on Hozo's method, which was the previously widely used version. 
+
+Wan et al. propose the following formula to estimate the mean ($\overline{\mbox{X}}$), when you know the third quartile ($q_3$), first quartile ($q_1$), and the median ($m$) values. 
+
+$$
+\overline{\mbox{X}} = \frac{q_3 + m + q_1}{3}
+$$
+
+They propose the estimation of the standard deviation ($S$) to be:
+
+$$
+S = \frac{q_3 - q_1}{\eta(n)}
+$$
+
+Where $\eta(n)$ is a function that relates the sample size to the normal distribution. 
+
+Let's calculate the mean and SD from POISE-3 using Wan et al's method. Wan et al. kindly provide an Excel sheet with their formulae inserted so that it can automatically perform calculations, but we will perform the calculations by hand. The results are identical.
+
+Let's start by calculating the estimated mean in the 'low MAP' group from POISE-3 using the above formula (code is also shown for transperancy):
+
+``` r
+poise_low_map_mean <- (7 + 4 + 2.1)/3
+poise_low_map_mean
+```
+
+``` {r}
+poise_low_map_mean <- (7 + 4 + 2.1)/3
+poise_low_map_mean
+```
+
+And the 'high MAP' group:
+
+``` r
+poise_high_map_mean <- (7.1 + 4 + 2.1)/3
+poise_high_map_mean
+```
+
+``` {r}
+poise_high_map_mean <- (7.1 + 4 + 2.1)/3
+poise_high_map_mean
+```
+
+Now let's calculate the standard deviations. First, the 'low MAP' group.
+
+``` r
+poise_low_map_sd <- (7 - 2.1) / (2 * qnorm((0.75 * 3748 - 0.125) / (3748 + 0.25), 0, 1))
+poise_low_map_sd
+```
+
+``` {r}
+poise_low_map_sd <- (7 - 2.1) / (2 * qnorm((0.75 * 3748 - 0.125) / (3748 + 0.25), 0, 1))
+poise_low_map_sd
+```
+
+And now for the 'high MAP' group:
+
+``` r
+poise_high_map_sd <- (7.1 - 2.1) / (2 * qnorm((0.75 * 3742 - 0.125) / (3742 + 0.25), 0, 1))
+poise_high_map_sd
+```
+
+``` {r}
+poise_high_map_sd <- (7.1 - 2.1) / (2 * qnorm((0.75 * 3742 - 0.125) / (3742 + 0.25), 0, 1))
+poise_high_map_sd
+```
+
+So for our 'low MAP' group the mean (SD) is: 4.4 (3.6), and for our 'high MAP' group the mean (SD) is: 4.4 (3.7). 
+
+Both the means and standard deviations differ from those reported by D'Amico and colleagues.
+
+When I re-run the meta-analysis with the new values, this is the output:
+
+``` {r}
+los_df_new <- los_df %>%
+  mutate(m1i = if_else(author == "Marcucci", poise_low_map_mean, m1i),
+         sd1i = if_else(author == "Marcucci", poise_low_map_sd, sd1i),
+         m2i = if_else(author == "Marcucci", poise_high_map_mean, m2i),
+         sd2i = if_else(author == "Marcucci", poise_high_map_sd, sd2i))
+
+dat_los_new <- escalc(measure="MD", m1i = m1i, sd1i = sd1i, n1i = n1i, m2i = m2i, sd2i = sd2i, n2i = n2i, data=los_df_new,
+                      slab=paste(author,year, sep=", "))
+
+res <- rma(yi, vi, data = dat_los_new, method = "DL")
+
+print(res)
+```
+
+Let's also put this in a forest plot so the findings are clear:
+
+``` {r fig.height = 4, fig.width = 8}
+mlabfun <- function(text, res) {
+  list(bquote(paste(.(text),
+                    " (Q = ", .(formatC(res$QE, digits=2, format="f")), 
+                    ", df = ", .(res$k - res$p),
+                    ", p ", .(metafor:::.pval(res$QEp, digits=2, showeq=TRUE, sep=" ")), "; ",
+                    I^2, " = ", .(formatC(res$I2, digits=1, format="f")), "%, ",
+                    tau^2, " = ", .(formatC(res$tau2, digits=2, format="f")), ")")))}
+op <- par(cex=.75, font=8)
+forest(res, showweights=TRUE, 
+       col ="orange", border="orange", colout="blue",
+       ilab=cbind(sprintf('%.1f', dat_los_new$m1i), sprintf('%.1f', dat_los_new$sd1i), dat_los_new$n1i, 
+       sprintf('%.1f', dat_los_new$m2i), sprintf('%.1f', dat_los_new$sd2i), dat_los_new$n2i),  cex=1,
+       mlab=mlabfun("RE Model", res),
+       header=c("Authors, Year", "Study Weight, Mean Difference (95% CI)"))
+par(font = 2, cex=0.7)
+text(c(-19, -16.75, -14.25, -11.5, -9.25, -7.25), 8, c("Mean", "SD", "Total", "Mean", "SD", "Total"))
+text(c(-17,-9.5), 9, c("Low target", "High target"))
+par(font=1, cex=0.75)
+text(c(-6,6), -1.5, c("Favours low target", "Favours high target"))
+``` 
+
+We now observe no evidence of an effect of MAP targets on hospital LOS, and the weight of POISE-3 has been reduced from 98% to 90% (as each group's SD has more than doubled).
+
+Note that this issue of the application of Wan's method also applies to the study of [Hu et al](https://www.sciencedirect.com/science/article/pii/S0952818020322455?via%3Dihub). In the manuscript, Hu et al. state that the median length of hospital stay is 12 (9-15) in the low MAP group and 12 (9-15) in the high MAP group. It's a little difficult to determine if the range provided is a 95%CI or an IQR, but I think we can assume it's an IQR as they are integers (and CI's in the table appear to be rounded to decimal places). Also, if the 95%CI for the median was 9-15, then the standard deviation would be 18, using the formula:
+
+$$
+SD = \frac{\sqrt{N} × (\text{upper limit} - \text{lower limit})}{3.92}
+$$
+
+In fact, regardless of the calculation used, it would be impossible to have a smaller SD in the group with fewer participants (in this case - the 'low MAP' group, with reported SD = 3.9 and n = 143) than the group with more participants (the 'high MAP' group - reported SD = 5.1, n = 155), if the median and the IQR from the manuscript are exactly the same for both groups.
+
+The calculation issue also applies (albeit to a lesser extent) to the study by [Vedel and colleagues](https://www.ahajournals.org/doi/full/10.1161/circulationaha.117.030308#:~:text=Conclusions%3A,number%20of%20new%20cerebral%20infarcts.). D'Amico et al. report that the mean (SD) in the 'low MAP' group is 6.3 (2.2), and in the 'high MAP' group is 6.2 (2.0). The median (Q1-Q3) reported in the manuscript is 6 (5-8) for the 'low MAP' group and 6 (5-7.75) in the 'high MAP' group. When I use Wan's method to calculate the mean (SD) I get 6.3 (2.3) for the 'low MAP' group and 6.3 (2.1) for the 'high MAP' group. 
+
+There is also an issue with the data extraction for the study by [Siepe and colleagues](https://pubmed.ncbi.nlm.nih.gov/21168339/). D'Amico et al. have extracted the data for hospital LOS rounded to the nearest whole number. Per the Siepe et al. manuscript, the mean (SD) in the low MAP group is 12.2 (8.1) and 12.6 (6.9) in the high MAP group. D'Amico et al. report this as 12.0 (8.0) and 13.0 (7.0). The number of participants in the 'high MAP' group is also incorrectly extracted - it is reported as 44 in the manuscript, and reported as 47 in the meta-analysis.
+
+There is also an issue with the data extraction for the study by [Sirvinakas and colleagues](https://journals.sagepub.com/doi/10.1177/0267659112436751). In the manuscript the mean (SD) in the 'low MAP' group is reported as 12.1 (5.9), while in the D'Amico et al. meta-analysis, this is reported as 12.0 (5.8). Another issue identified in our manuscript is that the 'median pressure' group and the 'low pressure' group from the Sirvinaskas et al. study are not combined - this would need to be done to be consistent with the inclusion criteria, given the 'median pressure' group in Sirvinskas included 60mmHg (it was 60 - 69.9mmHg). 
+
+The [Cochrane handbook](https://handbook-5-1.cochrane.org/chapter_7/table_7_7_a_formulae_for_combining_groups.htm) provides the following formula for calculating the combined mean of two groups:
+
+$$
+Mean_\text{combined} = \frac{N_1M_1 + N_2M_2}{N_1 + N_2}
+$$
+
+Where $M_1$ is the mean in one group and $M_2$ is the mean in the other group, and $N_1$ and $N_2$ are the number of participants in the corresponding groups.
+
+
+The forumla for calculating the pooled standard deviation is:
+
+$$
+SD_\text{pooled} = \sqrt{\frac{(N_1 - 1)SD_1^2 + (N_2 - 1)SD_2^2 + \frac{N_1N_2}{N_1 + N_2}(M_1^2 + M_2^2 - 2M_1M_2)}{N_1 + N_2 - 1}}
+$$
+Let's plug the numbers into these equations for the Sirvinskas et al. study. Firstly, the mean:
+
+``` r
+pooled_mean <- (36*12.1 + 50*13.5)/(36 + 50)
+pooled_mean
+```
+
+``` {r}
+pooled_mean <- (36*12.1 + 50*13.5)/(36 + 50)
+pooled_mean
+```
+
+And now the SD:
+
+``` r
+pooled_sd <- sqrt(((36 - 1)*5.9^2 + (50 - 1)*8.2^2 + ((36*50)/(36 + 50))*(12.1^2 + 13.5^2 - 2*12.1*13.5))/(36 + 50 - 1))
+pooled_sd
+```
+
+``` {r}
+pooled_sd <- sqrt(((36 - 1)*5.9^2 + (50 - 1)*8.2^2 + ((36*50)/(36 + 50))*(12.1^2 + 13.5^2 - 2*12.1*13.5))/(36 + 50 - 1))
+pooled_sd
+```
+
+The forest plot with the new values for all studies is given below:
+
+``` {r fig.height = 4, fig.wigth = 8}
+los_df_new <- los_df %>%
+  mutate(m1i = if_else(author == "Marcucci", poise_low_map_mean, m1i),
+         sd1i = if_else(author == "Marcucci", poise_low_map_sd, sd1i),
+         m2i = if_else(author == "Marcucci", poise_high_map_mean, m2i),
+         sd2i = if_else(author == "Marcucci", poise_high_map_sd, sd2i),
+         m1i = if_else(author == "Siepe", 12.2, m1i),
+         sd1i = if_else(author == "Siepe", 8.1, sd1i),
+         m2i = if_else(author == "Siepe", 12.6, m2i),
+         sd2i = if_else(author == "Siepe", 6.9, sd2i),
+         n2i = if_else(author == "Siepe", 44, n2i),
+         m1i = if_else(author == "Sirvinskas", pooled_mean, m1i),
+         sd1i = if_else(author == "Sirvinskas", pooled_sd, sd1i),
+         m1i = if_else(author == "Vedel", 6.3, m1i),
+         sd1i = if_else(author == "Vedel", 2.3, sd1i), 
+         m2i = if_else(author == "Vedel", 6.3, m2i),
+         sd2i = if_else(author == "Vedel", 2.1, sd2i),
+         sd1i = if_else(author == "Hu", 4.5, sd1i),
+         sd2i = if_else(author == "Hu", 4.5, sd2i))
+
+dat_los_new <- escalc(measure="MD", m1i = m1i, sd1i = sd1i, n1i = n1i, m2i = m2i, sd2i = sd2i, n2i = n2i, data=los_df_new,
+                      slab=paste(author,year, sep=", "))
+
+res <- rma(yi, vi, data = dat_los_new, method = "DL")
+
+mlabfun <- function(text, res) {
+  list(bquote(paste(.(text),
+                    " (Q = ", .(formatC(res$QE, digits=2, format="f")), 
+                    ", df = ", .(res$k - res$p),
+                    ", p ", .(metafor:::.pval(res$QEp, digits=2, showeq=TRUE, sep=" ")), "; ",
+                    I^2, " = ", .(formatC(res$I2, digits=1, format="f")), "%, ",
+                    tau^2, " = ", .(formatC(res$tau2, digits=2, format="f")), ")")))}
+op <- par(cex=.75, font=8)
+forest(res, showweights=TRUE, 
+       col ="orange", border="orange", colout="blue",
+       ilab=cbind(sprintf('%.1f', dat_los_new$m1i), sprintf('%.1f', dat_los_new$sd1i), dat_los_new$n1i, 
+       sprintf('%.1f', dat_los_new$m2i), sprintf('%.1f', dat_los_new$sd2i), dat_los_new$n2i),  cex=1,
+       mlab=mlabfun("RE Model", res),
+       header=c("Authors, Year", "Study Weight, Mean Difference (95% CI)"))
+par(font = 2, cex=0.7)
+text(c(-18.5, -16, -13.75, -11.1, -9, -6.75), 8, c("Mean", "SD", "Total", "Mean", "SD", "Total"))
+text(c(-16,-9.5), 9, c("Low target", "High target"))
+par(font=1, cex=0.75)
+text(c(-6,6), -1.5, c("Favours low target", "Favours high target"))
+```
+
+
+
